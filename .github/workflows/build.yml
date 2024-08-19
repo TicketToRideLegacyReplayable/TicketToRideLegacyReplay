@@ -1,0 +1,102 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+
+    - name: Simple Build
+      run: sudo cmake -S . -B build -DCMAKE_INSTALL_PREFIX=. && sudo cmake --build build --config Release && sudo cmake --install build --config Release --prefix .
+
+    - name: Check Succes
+      run: |
+        [ ! -f "./TicketToRideLegacyReplayable" ] && echo "File missing" >&2 && exit 1 || echo "File found" >&2
+
+  installer:
+    needs: [build]
+    name: Installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+
+    - name: Extract package version
+      id: extract_package_version
+      run: |
+        VERSION=$(grep '^version=' build/version.txt | cut -d'=' -f2)
+        echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
+    - name: Simple Install
+      run: |
+        sudo cmake -S . -B build
+        sudo cmake --build build --config Release
+        sudo cpack --config build/CPackConfig.cmake
+        sudo dpkg -i TicketToRideLegacyReplayable.deb || sudo apt-get install -f || sudo rpm -i TicketToRideLegacyReplayable.rpm || sudo dnf install -y TicketToRideLegacyReplayable.rpm || sudo tar -xzf TicketToRideLegacyReplayable-${version}-Linux.tar.Z
+      env:
+        VERSION: ${{ env.VERSION }}
+
+  execution_test:
+    needs: [build]
+    name: Check if executables can run
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y screen
+        sudo apt-get install -y *Xvfb*
+
+    - name: Set up fake display
+      run: |
+        Xvfb :99 -screen 0 1024x768x24 &
+        export DISPLAY=:99
+
+    - name: Build
+      run: sudo cmake -S . -B build -DCMAKE_INSTALL_PREFIX=. && sudo cmake --build build --config Release && sudo cmake --install build --config Release --prefix .
+
+    - name: Start
+      run: |
+        ./TicketToRideLegacyReplayable &
+        sleep 1
+        if ! pgrep -f TicketToRideLegacyReplayable; then
+          echo "TicketToRideLegacyReplayable failed to start" >&2
+          exit 1
+        fi
+    - name: Stop
+      if: always()
+      run: |
+        killall -q TicketToRideLegacyReplayable || echo "TicketToRideLegacyReplayable not running" >&2

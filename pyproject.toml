@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+markers = [
+    "cards: Tests for the cards",
+    "story: Tests for the story",
+    "regions: Tests for the regions",
+]
+addopts = "-p no:warnings --cov=. --cov-report term-missing:skip-covered --no-cov-on-fail --cov-branch"
+[tool.python]
+    environ = { PYTHONPATH = "." }
